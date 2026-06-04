@@ -3,16 +3,16 @@ import pandas as pd
 import re
 import io
 
-# 1. Page Frame Configuration
-st.set_page_config(page_title="Universal Sheet Cleaner", page_icon="🧼")
-st.title("🧼 Universal Spreadsheet Data Cleaner")
-st.write("Upload your data once. Your file will remain safely cached in system memory while you modify formatting options.")
+# 1. Page Configuration
+st.set_page_config(page_title="Universal Sheet Cleaner Pro", page_icon="🧼", layout="wide")
+st.title("🧼 Universal Spreadsheet Data Cleaner Pro")
+st.write("The ultimate stateless pipeline to clean, format, validate, and secure your business files.")
 
-# 2. File Upload Box (Keeps track of data using Session State memory)
+# 2. File Upload Box (Cached via Session State memory)
 uploaded_file = st.file_uploader("Upload your messy spreadsheet here", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
-    # Save raw file state into permanent memory cache if it isn't there yet
+    # Cache raw data block to handle Streamlit re-runs smoothly
     if "raw_df" not in st.session_state or st.session_state.get("file_name") != uploaded_file.name:
         if uploaded_file.name.endswith('.csv'):
             st.session_state["raw_df"] = pd.read_csv(uploaded_file)
@@ -20,21 +20,23 @@ if uploaded_file is not None:
             st.session_state["raw_df"] = pd.read_excel(uploaded_file)
         st.session_state["file_name"] = uploaded_file.name
 
-    # Always clone a fresh working copy from our saved backup memory data
+    # Always make a fresh copy to process
     working_df = st.session_state["raw_df"].copy()
     
-    # 3. SIDEBAR CONTROLS (Toggling these will smoothly trigger live calculation changes)
-    st.sidebar.header("🛠️ Cleaning Options")
+    # 3. SIDEBAR CONTROLS
+    st.sidebar.header("🛠️ Standard Operations")
     remove_dup = st.sidebar.checkbox("Delete Duplicate Rows", value=True)
     drop_empty = st.sidebar.checkbox("Drop Completely Empty Rows", value=True)
-    clean_contacts = st.sidebar.checkbox("Clean Contact Info (Names, Emails, Phones)", value=True)
-    fix_dates_money = st.sidebar.checkbox("Standardize Dates & Repair Financial Data", value=True)
+    clean_contacts = st.sidebar.checkbox("Standardize Text & Phone Casing", value=True)
+    fix_dates_money = st.sidebar.checkbox("Format Dates & Currency Fields", value=True)
     
-    # NEW PREMIUM MODULINE SWITCH
     st.sidebar.subheader("🚀 Advanced Cleaning Modules")
-    validate_emails = st.sidebar.checkbox("Validate Email Structural Integrity", value=True)
+    validate_emails = st.sidebar.checkbox("Validate Email Integrity", value=True)
+    enable_splitter = st.sidebar.checkbox("Split Full Names (First/Last)", value=False)
+    enable_imputation = st.sidebar.checkbox("Auto-Fill Empty/Blank Cells", value=False)
+    enable_anomaly = st.sidebar.checkbox("Flag Financial Anomalies", value=False)
 
-    # 4. PROCESSING PIPELINE (Executes on your active working layout)
+    # 4. PROCESSING PIPELINE
     if drop_empty:
         working_df = working_df.dropna(how='all')
 
@@ -50,22 +52,32 @@ if uploaded_file is not None:
             working_df['Phone'] = working_df['Phone'].astype(str).str.replace(r'\D', '', regex=True)
             working_df['Phone'] = working_df['Phone'].replace('', 'MISSING')
 
-    # NEW: EMAIL VALIDATION BLOCK (Using vectorized RegEx)
     if validate_emails:
-        # Smart matching: find any column containing "email" or "e-mail"
         email_cols = [c for c in working_df.columns if 'email' in c.lower() or 'e-mail' in c.lower()]
-        
-        # Comprehensive email syntax pattern matching requirement (username@domain.extension)
         email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-        
         for c in email_cols:
-            # Force cleanup first to minimize parsing errors
             working_df[c] = working_df[c].astype(str).str.strip().str.lower()
-            
-            # Execute live RegEx matching line-by-line across memory index
             working_df[f'{c}_Status'] = working_df[c].apply(
                 lambda x: "✅ Valid" if re.match(email_pattern, str(x)) else "❌ Invalid Format"
             )
+
+    # FEATURE 1: SMART NAME SPLITTER
+    if enable_splitter:
+        name_cols = [c for c in working_df.columns if 'name' in c.lower() and 'first' not in c.lower() and 'last' not in c.lower()]
+        for c in name_cols:
+            # Splits string at the first white space into a max of 2 columns
+            split_data = working_df[c].astype(str).str.strip().str.split(' ', n=1, expand=True)
+            working_df['First Name'] = split_data[0].str.title()
+            working_df['Last Name'] = split_data[1].str.title().fillna('')
+
+    # FEATURE 2: MISSING DATA AUTO-FILLER
+    if enable_imputation:
+        # Separate text strings columns from numeric/math columns
+        text_cols = working_df.select_dtypes(include=['object']).columns
+        num_cols = working_df.select_dtypes(include=['number']).columns
+        # Apply data typing default values cleanly to clear missing values
+        working_df[text_cols] = working_df[text_cols].fillna("Unknown")
+        working_df[num_cols] = working_df[num_cols].fillna(0.0)
 
     if fix_dates_money:
         if 'Signup Date' in working_df.columns:
@@ -74,35 +86,28 @@ if uploaded_file is not None:
             working_df['Revenue'] = working_df['Revenue'].astype(str).str.replace(r'[$,]', '', regex=True)
             working_df['Revenue'] = pd.to_numeric(working_df['Revenue'], errors='coerce').fillna(0.0)
 
-    # 5. UI PREVIEW RENDER (Updates instantly when checkboxes are flipped)
+    # FEATURE 3: FINANCIAL ANOMALY GUARD
+    if enable_anomaly:
+        num_cols = working_df.select_dtypes(include=['number']).columns
+        for c in num_cols:
+            # Scan columns for impossible negative valuations
+            working_df[f'{c}_Alert'] = working_df[c].apply(
+                lambda x: "🚨 Negative Error" if x < 0 else "Clear"
+            )
+
+    # 5. USER INTERFACE DISPLAY
     st.subheader("👀 Cleaned Data Preview")
-    st.dataframe(working_df.head(5))
+    st.dataframe(working_df.head(10))
 
-    # 6. CONVERT CLEAN DATA INTO LIVE DOWNLOAD STREAM
+    # 6. EXPORT PREPARATION
     output_buffer = io.BytesIO()
-
-    if uploaded_file.name.endswith('.csv'):
-        working_df.to_csv(output_buffer, index=False)
-
-        download_name = f"cleaned_{uploaded_file.name}"
-        mime_type = "text/csv"
-
-    else:
-        with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
-            working_df.to_excel(writer, index=False)
-
-        download_name = f"cleaned_{uploaded_file.name}"
-        mime_type = (
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
+    working_df.to_csv(output_buffer, index=False)
     output_buffer.seek(0)
 
-    # 7. DOWNLOAD BUTTON (Now works natively on click without dropping data)
     st.write("---")
     st.download_button(
-        label="🚀 Download Cleaned Spreadsheet",
-        data=output_buffer.getvalue(),
-        file_name=download_name,
-        mime=mime_type
+        label="🚀 Download Premium Cleaned Spreadsheet",
+        data=output_buffer,
+        file_name=f"cleaned_pro_{st.session_state['file_name']}",
+        mime="text/csv"
     )
