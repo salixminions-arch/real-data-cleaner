@@ -31,10 +31,10 @@ def clean_spreadsheet(input_file, output_file):
     if output_file.endswith('.csv'):
         df.to_csv(output_file, index=False)
     else:
-        df.to_excel(output_file, index=False)
+        df.to_xlsx(output_file, index=False)
         
     print(f" Success! Cleaned file saved as: {output_file}")
 
 # Execution Rule
 if __name__ == "__main__":
-    clean_spreadsheet("Messy file.xlsx", "Clean file.xlsx")
+    clean_spreadsheet("M.xlsx", "Clean file.xlsx")

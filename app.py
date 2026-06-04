@@ -58,14 +58,29 @@ if uploaded_file is not None:
 
     # 6. CONVERT CLEAN DATA INTO LIVE DOWNLOAD STREAM
     output_buffer = io.BytesIO()
-    working_df.to_csv(output_buffer, index=False)
+
+    if uploaded_file.name.endswith('.csv'):
+        working_df.to_csv(output_buffer, index=False)
+
+        download_name = f"cleaned_{uploaded_file.name}"
+        mime_type = "text/csv"
+
+    else:
+        with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
+            working_df.to_excel(writer, index=False)
+
+        download_name = f"cleaned_{uploaded_file.name}"
+        mime_type = (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
     output_buffer.seek(0)
 
     # 7. DOWNLOAD BUTTON (Now works natively on click without dropping data)
     st.write("---")
     st.download_button(
         label="🚀 Download Cleaned Spreadsheet",
-        data=output_buffer,
-        file_name=f"cleaned_{st.session_state['file_name']}",
-        mime="text/csv"
+        data=output_buffer.getvalue(),
+        file_name=download_name,
+        mime=mime_type
     )
