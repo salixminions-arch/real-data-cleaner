@@ -1,13 +1,14 @@
 import streamlit as st
 import pandas as pd
+import re
 import io
 
-# 1. Page Frame Setup
+# 1. Page Frame Configuration
 st.set_page_config(page_title="Universal Sheet Cleaner", page_icon="🧼")
 st.title("🧼 Universal Spreadsheet Data Cleaner")
 st.write("Upload your data once. Your file will remain safely cached in system memory while you modify formatting options.")
 
-# 2. FILE UPLOAD INTERFACE (Keeps track of data using Session State memory)
+# 2. File Upload Box (Keeps track of data using Session State memory)
 uploaded_file = st.file_uploader("Upload your messy spreadsheet here", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
@@ -22,12 +23,16 @@ if uploaded_file is not None:
     # Always clone a fresh working copy from our saved backup memory data
     working_df = st.session_state["raw_df"].copy()
     
-    # 3. SIDEBAR CONTROLS (Toggling these will now smoothly trigger live calculation changes)
+    # 3. SIDEBAR CONTROLS (Toggling these will smoothly trigger live calculation changes)
     st.sidebar.header("🛠️ Cleaning Options")
     remove_dup = st.sidebar.checkbox("Delete Duplicate Rows", value=True)
     drop_empty = st.sidebar.checkbox("Drop Completely Empty Rows", value=True)
     clean_contacts = st.sidebar.checkbox("Clean Contact Info (Names, Emails, Phones)", value=True)
     fix_dates_money = st.sidebar.checkbox("Standardize Dates & Repair Financial Data", value=True)
+    
+    # NEW PREMIUM MODULINE SWITCH
+    st.sidebar.subheader("🚀 Advanced Cleaning Modules")
+    validate_emails = st.sidebar.checkbox("Validate Email Structural Integrity", value=True)
 
     # 4. PROCESSING PIPELINE (Executes on your active working layout)
     if drop_empty:
@@ -44,6 +49,23 @@ if uploaded_file is not None:
         if 'Phone' in working_df.columns:
             working_df['Phone'] = working_df['Phone'].astype(str).str.replace(r'\D', '', regex=True)
             working_df['Phone'] = working_df['Phone'].replace('', 'MISSING')
+
+    # NEW: EMAIL VALIDATION BLOCK (Using vectorized RegEx)
+    if validate_emails:
+        # Smart matching: find any column containing "email" or "e-mail"
+        email_cols = [c for c in working_df.columns if 'email' in c.lower() or 'e-mail' in c.lower()]
+        
+        # Comprehensive email syntax pattern matching requirement (username@domain.extension)
+        email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+        
+        for c in email_cols:
+            # Force cleanup first to minimize parsing errors
+            working_df[c] = working_df[c].astype(str).str.strip().str.lower()
+            
+            # Execute live RegEx matching line-by-line across memory index
+            working_df[f'{c}_Status'] = working_df[c].apply(
+                lambda x: "✅ Valid" if re.match(email_pattern, str(x)) else "❌ Invalid Format"
+            )
 
     if fix_dates_money:
         if 'Signup Date' in working_df.columns:
