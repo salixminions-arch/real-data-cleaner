@@ -1,54 +1,71 @@
 import streamlit as st
 import pandas as pd
-import re
 import io
 
-# 1. Page Configuration and Styling
-st.set_page_config(page_title="Instant Spreadsheet Cleaner", page_icon="🧼")
+# 1. Page Frame Setup
+st.set_page_config(page_title="Universal Sheet Cleaner", page_icon="🧼")
 st.title("🧼 Universal Spreadsheet Data Cleaner")
-st.write("Upload any messy CSV or Excel file. Clean it instantly. No data is ever stored on our servers.")
+st.write("Upload your data once. Your file will remain safely cached in system memory while you modify formatting options.")
 
-# 2. File Upload Widget
-uploaded_file = st.file_uploader("Drag and drop your messy spreadsheet here", type=["csv", "xlsx"])
+# 2. FILE UPLOAD INTERFACE (Keeps track of data using Session State memory)
+uploaded_file = st.file_uploader("Upload your messy spreadsheet here", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
-    # Read the uploaded file directly into RAM memory
-    if uploaded_file.name.endswith('.csv'):
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_excel(uploaded_file)
-        
-    st.success("File uploaded successfully!")
+    # Save raw file state into permanent memory cache if it isn't there yet
+    if "raw_df" not in st.session_state or st.session_state.get("file_name") != uploaded_file.name:
+        if uploaded_file.name.endswith('.csv'):
+            st.session_state["raw_df"] = pd.read_csv(uploaded_file)
+        else:
+            st.session_state["raw_df"] = pd.read_excel(uploaded_file)
+        st.session_state["file_name"] = uploaded_file.name
+
+    # Always clone a fresh working copy from our saved backup memory data
+    working_df = st.session_state["raw_df"].copy()
     
-    # 3. Running the Python Core Cleaning Logic
-    # (Clean names, emails, and strip whitespace)
-    for col in df.columns:
-        if df[col].dtype == 'object': # If the column contains text string data
-            df[col] = df[col].astype(str).str.strip()
-            
-    # Example: If a 'Name' column exists, auto-fix capitalization rules
-    name_cols = [c for c in df.columns if 'name' in c.lower()]
-    for c in name_cols:
-        df[c] = df[c].str.title()
+    # 3. SIDEBAR CONTROLS (Toggling these will now smoothly trigger live calculation changes)
+    st.sidebar.header("🛠️ Cleaning Options")
+    remove_dup = st.sidebar.checkbox("Delete Duplicate Rows", value=True)
+    drop_empty = st.sidebar.checkbox("Drop Completely Empty Rows", value=True)
+    clean_contacts = st.sidebar.checkbox("Clean Contact Info (Names, Emails, Phones)", value=True)
+    fix_dates_money = st.sidebar.checkbox("Standardize Dates & Repair Financial Data", value=True)
 
-    # 4. Display a "Teaser" Preview of the cleaned data
-    st.subheader("👀 Preview of your cleaned data:")
-    st.dataframe(df.head(5)) # Shows only the first 5 rows to prove the code worked
+    # 4. PROCESSING PIPELINE (Executes on your active working layout)
+    if drop_empty:
+        working_df = working_df.dropna(how='all')
 
-    # 5. Convert the clean DataFrame back into downloadable bytes in memory
-    buffer = io.BytesIO()
-    df.to_csv(buffer, index=False)
-    buffer.seek(0)
+    if remove_dup:
+        working_df = working_df.drop_duplicates()
 
-    # 6. The Monetization Action Button
+    if clean_contacts:
+        if 'Name' in working_df.columns:
+            working_df['Name'] = working_df['Name'].astype(str).str.strip().str.title().replace('Null', None)
+        if 'Email' in working_df.columns:
+            working_df['Email'] = working_df['Email'].astype(str).str.strip().str.lower()
+        if 'Phone' in working_df.columns:
+            working_df['Phone'] = working_df['Phone'].astype(str).str.replace(r'\D', '', regex=True)
+            working_df['Phone'] = working_df['Phone'].replace('', 'MISSING')
+
+    if fix_dates_money:
+        if 'Signup Date' in working_df.columns:
+            working_df['Signup Date'] = pd.to_datetime(working_df['Signup Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+        if 'Revenue' in working_df.columns:
+            working_df['Revenue'] = working_df['Revenue'].astype(str).str.replace(r'[$,]', '', regex=True)
+            working_df['Revenue'] = pd.to_numeric(working_df['Revenue'], errors='coerce').fillna(0.0)
+
+    # 5. UI PREVIEW RENDER (Updates instantly when checkboxes are flipped)
+    st.subheader("👀 Cleaned Data Preview")
+    st.dataframe(working_df.head(5))
+
+    # 6. CONVERT CLEAN DATA INTO LIVE DOWNLOAD STREAM
+    output_buffer = io.BytesIO()
+    working_df.to_csv(output_buffer, index=False)
+    output_buffer.seek(0)
+
+    # 7. DOWNLOAD BUTTON (Now works natively on click without dropping data)
     st.write("---")
-    st.subheader("📥 Download your complete cleaned file")
-    st.write("Unlock unlimited access to your clean, production-ready file for a one-time processing fee.")
-    
-    # In a production app, you wrap this button in a Lemon Squeezy payment link script
     st.download_button(
-        label="🚀 Unlock & Download Cleaned Spreadsheet ($12)",
-        data=buffer,
-        file_name=f"perfectly_cleaned_{uploaded_file.name}",
+        label="🚀 Download Cleaned Spreadsheet",
+        data=output_buffer,
+        file_name=f"cleaned_{st.session_state['file_name']}",
         mime="text/csv"
     )
