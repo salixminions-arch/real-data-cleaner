@@ -2,16 +2,13 @@ import streamlit as st
 import pandas as pd
 import io
 
-# 1. Page Frame Setup
-st.set_page_config(page_title="Universal Sheet Cleaner", page_icon="🧼")
-st.title("🧼 Universal Spreadsheet Data Cleaner")
-st.write("Upload your data once. Your file will remain safely cached in system memory while you modify formatting options.")
+st.set_page_config(page_title="Contact Sheet Cleaner", page_icon="🧼")
+st.title("🧼 Contact & CRM Spreadsheet Cleaner")
+st.write("Upload your data safely. Map your columns below to instantly clean your file.")
 
-# 2. FILE UPLOAD INTERFACE (Keeps track of data using Session State memory)
-uploaded_file = st.file_uploader("Upload your messy spreadsheet here", type=["csv", "xlsx"])
+uploaded_file = st.file_uploader("Upload your messy spreadsheet (.csv or .xlsx)", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
-    # Save raw file state into permanent memory cache if it isn't there yet
     if "raw_df" not in st.session_state or st.session_state.get("file_name") != uploaded_file.name:
         if uploaded_file.name.endswith('.csv'):
             st.session_state["raw_df"] = pd.read_csv(uploaded_file)
@@ -19,50 +16,58 @@ if uploaded_file is not None:
             st.session_state["raw_df"] = pd.read_excel(uploaded_file)
         st.session_state["file_name"] = uploaded_file.name
 
-    # Always clone a fresh working copy from our saved backup memory data
     working_df = st.session_state["raw_df"].copy()
+    all_columns = ["(Skip / None)"] + list(working_df.columns)
+
+    # UI-First Column Mapping
+    st.sidebar.header("🛠️ Map Your Columns")
+    st.sidebar.write("Tell the tool which columns are which:")
     
-    # 3. SIDEBAR CONTROLS (Toggling these will now smoothly trigger live calculation changes)
-    st.sidebar.header("🛠️ Cleaning Options")
+    name_col = st.sidebar.selectbox("Name Column", all_columns)
+    email_col = st.sidebar.selectbox("Email Column", all_columns)
+    phone_col = st.sidebar.selectbox("Phone Column", all_columns)
+    date_col = st.sidebar.selectbox("Date Column", all_columns)
+    money_col = st.sidebar.selectbox("Financial/Revenue Column", all_columns)
+
+    st.sidebar.header("⚙️ Global Rules")
     remove_dup = st.sidebar.checkbox("Delete Duplicate Rows", value=True)
     drop_empty = st.sidebar.checkbox("Drop Completely Empty Rows", value=True)
-    clean_contacts = st.sidebar.checkbox("Clean Contact Info (Names, Emails, Phones)", value=True)
-    fix_dates_money = st.sidebar.checkbox("Standardize Dates & Repair Financial Data", value=True)
 
-    # 4. PROCESSING PIPELINE (Executes on your active working layout)
+    # 4. PROCESSING PIPELINE
     if drop_empty:
         working_df = working_df.dropna(how='all')
 
     if remove_dup:
         working_df = working_df.drop_duplicates()
 
-    if clean_contacts:
-        if 'Name' in working_df.columns:
-            working_df['Name'] = working_df['Name'].astype(str).str.strip().str.title().replace('Null', None)
-        if 'Email' in working_df.columns:
-            working_df['Email'] = working_df['Email'].astype(str).str.strip().str.lower()
-        if 'Phone' in working_df.columns:
-            working_df['Phone'] = working_df['Phone'].astype(str).str.replace(r'\D', '', regex=True)
-            working_df['Phone'] = working_df['Phone'].replace('', 'MISSING')
+    # Dynamic Cleaning based on User UX Input
+    if name_col != "(Skip / None)":
+        working_df[name_col] = working_df[name_col].astype(str).str.strip().str.title().replace(['Null', 'Nan', 'nan'], None)
+        
+    if email_col != "(Skip / None)":
+        working_df[email_col] = working_df[email_col].astype(str).str.strip().str.lower()
+        
+    if phone_col != "(Skip / None)":
+        # Removes formatting but preserves empty/blank fields cleanly without injecting text
+        working_df[phone_col] = working_df[phone_col].astype(str).str.replace(r'\D', '', regex=True)
+        working_df[phone_col] = working_df[phone_col].replace(r'^\s*$', None, regex=True)
 
-    if fix_dates_money:
-        if 'Signup Date' in working_df.columns:
-            working_df['Signup Date'] = pd.to_datetime(working_df['Signup Date'], errors='coerce').dt.strftime('%Y-%m-%d')
-        if 'Revenue' in working_df.columns:
-            working_df['Revenue'] = working_df['Revenue'].astype(str).str.replace(r'[$,]', '', regex=True)
-            working_df['Revenue'] = pd.to_numeric(working_df['Revenue'], errors='coerce').fillna(0.0)
+    if date_col != "(Skip / None)":
+        # coerce keeps the script from crashing, turning broken dates to NaT (blank) safely
+        working_df[date_col] = pd.to_datetime(working_df[date_col], errors='coerce').dt.strftime('%Y-%m-%d')
+        
+    if money_col != "(Skip / None)":
+        working_df[money_col] = working_df[money_col].astype(str).str.replace(r'[$,\s]', '', regex=True)
+        working_df[money_col] = pd.to_numeric(working_df[money_col], errors='coerce')
 
-    # 5. UI PREVIEW RENDER (Updates instantly when checkboxes are flipped)
     st.subheader("👀 Cleaned Data Preview")
     st.dataframe(working_df.head(5))
 
-    # 6. CONVERT CLEAN DATA INTO LIVE DOWNLOAD STREAM
+    # Convert to CSV stream
     output_buffer = io.BytesIO()
     working_df.to_csv(output_buffer, index=False)
     output_buffer.seek(0)
 
-
-    # 7. DOWNLOAD BUTTON (Now works natively on click without dropping data)
     st.write("---")
     st.download_button(
         label="🚀 Download Cleaned Spreadsheet",
