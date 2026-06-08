@@ -122,3 +122,11 @@ if uploaded_file is not None:
         return output.getvalue()
 
     excel_bytes = convert_df_to_excel(working_df)
+
+    st.download_button(
+            label="🚀 Download Cleaned Excel Sheet",
+            data=excel_bytes,
+            file_name=f"cleaned_{base_name}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
